@@ -1,0 +1,31 @@
+name: CI
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan commits introduced by the PR
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          IMAGE: ghcr.io/trufflesecurity/trufflehog:3.99.8@sha256:674b2f187620a19df77f44cf9a7d77efcc581a5662accef2f2739cbb46ba4a3a
+        run: |
+          set -euo pipefail
+          start=$(git merge-base "$BASE_SHA" HEAD)
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" "$IMAGE" \
+            git file:///repo --since-commit "$start" --branch "$(git rev-parse HEAD)" \
+            --results=verified,unknown,unverified --no-update --fail --json \
+            | jq -c '{detector: .DetectorName, file: .SourceMetadata.Data.Git.file}'
